@@ -1,0 +1,17 @@
+[package]
+name = "quickjs"
+version = "0.1.0"
+authors = ["seu <seu@panopticon.re>"]
+edition = "2018"
+license = "MIT or LGPL2"
+repository = "https://github.com/flanfly/quickjs-rs"
+homepage = "https://bellard.org/quickjs/"
+documentation = "https://bellard.org/quickjs/quickjs.html"
+description = "Rust bindings for Fabrice Bellards QuickJS Javascript Engine"
+
+[dependencies]
+quickjs-sys = "0.1"
+
+[patch.crates-io]
+quickjs-sys = { path = "../quickjs-sys" }
+
