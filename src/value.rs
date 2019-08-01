@@ -23,13 +23,13 @@ use crate::array::Array;
 use crate::runtime::{Context, ContextPtr};
 
 pub struct Value {
-    pub(crate) value: JSValue,
-    pub(crate) context: Rc<ContextPtr>,
+    pub(crate) value: sys::JSValue,
+    pub(crate) context: ContextPtr,
 }
 
 impl Drop for Value {
     fn drop(&mut self) {
-        unsafe { Helper_JS_FreeValue(self.context.context, self.value) }
+        unsafe { sys::Helper_JS_FreeValue(self.context.as_ptr(), self.value) }
     }
 }
 
@@ -37,8 +37,8 @@ impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe {
             let mut sz = 0i32;
-            let p = JS_ToCStringLen(
-                self.context.context as *mut _,
+            let p = sys::JS_ToCStringLen(
+                self.context.as_ptr() as *mut _,
                 &mut sz,
                 self.value,
                 0,
@@ -60,7 +60,7 @@ impl From<Array> for Value {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        self.context.context == other.context.context
+        self.context.as_ptr() == other.context.as_ptr()
             && self.value.tag == other.value.tag
             && unsafe { self.value.u.ptr == self.value.u.ptr }
     }
@@ -70,7 +70,9 @@ impl Eq for Value {}
 
 impl Clone for Value {
     fn clone(&self) -> Value {
-        let v = unsafe { Helper_JS_DupValue(self.context.context, self.value) };
+        let v = unsafe {
+            sys::Helper_JS_DupValue(self.context.as_ptr(), self.value)
+        };
         Value { value: v, context: self.context.clone() }
     }
 }

@@ -13,11 +13,11 @@ impl Array {
     pub fn len(&self) -> Result<usize, Value> {
         unsafe {
             let len_atm = JS_NewAtom(
-                self.value.context.context,
+                self.value.context.as_ptr(),
                 b"length\0".as_ptr() as *const i8,
             );
             let l = JS_GetPropertyInternal(
-                self.value.context.context,
+                self.value.context.as_ptr(),
                 self.value.value,
                 len_atm,
                 self.value.value,
@@ -40,7 +40,7 @@ impl Array {
     pub fn set(&mut self, index: u32, val: Value) -> bool {
         unsafe {
             JS_SetPropertyUint32(
-                self.value.context.context,
+                self.value.context.as_ptr(),
                 self.value.value,
                 index,
                 val.value,
@@ -50,7 +50,7 @@ impl Array {
     pub fn get(&self, idx: u32) -> Result<Value, Value> {
         let v = unsafe {
             JS_GetPropertyUint32(
-                self.value.context.context,
+                self.value.context.as_ptr(),
                 self.value.value,
                 idx,
             )
@@ -86,7 +86,6 @@ impl<'a> Iterator for ArrayIterator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::Runtime;
 
     #[test]

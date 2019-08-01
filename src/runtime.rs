@@ -72,33 +72,49 @@ impl Runtime {
             js_init_module_os(ctx, b"os\0".as_ptr() as *const i8);
 
             Context {
-                ptr: Rc::new(ContextPtr {
+                ptr: ContextPtr::Owned(Rc::new(ContextPtrOwned {
                     context: ctx,
                     runtime: self.ptr.clone(),
-                }),
+                })),
             }
         }
     }
 }
 
-pub struct ContextPtr {
+#[derive(Clone)]
+pub struct ContextPtrOwned {
     pub(crate) context: *mut JSContext,
     runtime: Rc<RuntimePtr>,
 }
 
-impl Drop for ContextPtr {
+#[derive(Clone)]
+pub(crate) enum ContextPtr {
+    Owned(Rc<ContextPtrOwned>),
+    Borrowed(*mut JSContext),
+}
+
+impl Drop for ContextPtrOwned {
     fn drop(&mut self) {
         if !self.context.is_null() {
             unsafe {
-                JS_FreeContext(self.context as *mut _);
+                JS_FreeContext(self.context);
             }
             self.context = ptr::null::<JSContext>() as *mut _;
         }
     }
 }
 
+impl ContextPtr {
+    pub(crate) fn as_ptr(&self) -> *mut JSContext {
+        match self {
+            &ContextPtr::Owned(ref ctx) => ctx.context,
+            &ContextPtr::Borrowed(ptr) => ptr,
+        }
+    }
+}
+
 pub struct Context {
-    pub(crate) ptr: Rc<ContextPtr>,
+    pub(crate) ptr: ContextPtr,
 }
 
 impl Context {
@@ -130,7 +146,7 @@ impl Context {
 
         let val = unsafe {
             let v = JS_Eval(
-                self.ptr.context as *mut _,
+                self.ptr.as_ptr(),
                 input.as_ptr(),
                 input.as_bytes().len(),
                 filename.as_ptr(),
@@ -142,7 +158,7 @@ impl Context {
 
         if val.is_exception() {
             unsafe {
-                let ex = JS_GetException(self.ptr.context as *mut _);
+                let ex = JS_GetException(self.ptr.as_ptr());
                 Err(Value { value: ex, context: self.ptr.clone() })
             }
         } else {
