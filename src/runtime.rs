@@ -122,7 +122,6 @@ impl Context {
         &mut self,
         input: &str,
         filename: &str,
-        skip_shebang: bool,
         strict: bool,
         strip: bool,
     ) -> Result<Value, Value> {
@@ -131,10 +130,6 @@ impl Context {
         let filename =
             CString::new(filename).expect("Eval: filename not a valid string");
         let mut flags = 0i32;
-
-        if skip_shebang {
-            flags |= JS_EVAL_FLAG_SHEBANG as i32;
-        }
 
         if strict {
             flags |= JS_EVAL_FLAG_STRICT as i32;
@@ -183,7 +178,7 @@ mod tests {
             rt.context()
         };
         let val = ctx
-            .eval(r#"print('Hello, World\n');"#, "<test>", false, false, false)
+            .eval(r#"print('Hello, World\n');"#, "<test>", false, false)
             .unwrap();
     }
 
