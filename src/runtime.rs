@@ -7,29 +7,21 @@ use std::rc::Rc;
 use std::slice;
 use std::str;
 
-use quickjs_sys::{
-    JSContext, JSRefCountHeader, JSRuntime, JSValue, JS_Eval, JS_FreeContext,
-    JS_FreeRuntime, JS_NewContext, JS_NewRuntime, JS_SetRuntimeInfo,
-    __JS_FreeValueRT, js_init_module_os, js_init_module_std,
-    js_std_add_helpers, js_std_dump_error, JS_GetException, JS_NewInt64,
-    JS_NewStringLen, JS_ToCStringLen, JS_ToInt64, JS_EVAL_FLAG_SHEBANG,
-    JS_EVAL_FLAG_STRICT, JS_EVAL_FLAG_STRIP, JS_EVAL_TYPE_MODULE, JS_TAG_BOOL,
-    JS_TAG_EXCEPTION, JS_TAG_FIRST, JS_TAG_FLOAT64, JS_TAG_INT, JS_TAG_STRING, Helper_JS_NewFloat64, JS_ToFloat64, JS_ToBool, Helper_JS_NewBool, JS_NewArray, Helper_JS_FreeValue,
-};
+use quickjs_sys as sys;
 
 use crate::Value;
 
 struct RuntimePtr {
     info: CString,
-    runtime: *mut JSRuntime,
+    runtime: *mut sys::JSRuntime,
 }
 
 impl Drop for RuntimePtr {
     fn drop(&mut self) {
         if !self.runtime.is_null() {
             unsafe {
-                JS_FreeRuntime(self.runtime as *mut _);
-                self.runtime = ptr::null::<JSRuntime>() as *mut _;
+                sys::JS_FreeRuntime(self.runtime as *mut _);
+                self.runtime = ptr::null::<sys::JSRuntime>() as *mut _;
             }
         }
     }
@@ -42,7 +34,7 @@ pub struct Runtime {
 impl Default for Runtime {
     fn default() -> Self {
         unsafe {
-            let rt = JS_NewRuntime();
+            let rt = sys::JS_NewRuntime();
 
             assert!(!rt.is_null());
             Runtime {
@@ -58,18 +50,18 @@ impl Default for Runtime {
 impl Runtime {
     pub fn context(&mut self) -> Context {
         unsafe {
-            let ctx = JS_NewContext(self.ptr.runtime as *mut _);
+            let ctx = sys::JS_NewContext(self.ptr.runtime as *mut _);
             assert!(!ctx.is_null());
 
-            js_std_add_helpers(
+            sys::js_std_add_helpers(
                 ctx,
                 1,
                 [b"<none>\n".as_ptr() as *mut i8].as_mut_ptr(),
             );
 
             /* system modules */
-            js_init_module_std(ctx, b"std\0".as_ptr() as *const i8);
-            js_init_module_os(ctx, b"os\0".as_ptr() as *const i8);
+            sys::js_init_module_std(ctx, b"std\0".as_ptr() as *const i8);
+            sys::js_init_module_os(ctx, b"os\0".as_ptr() as *const i8);
 
             Context {
                 ptr: ContextPtr::Owned(Rc::new(ContextPtrOwned {
@@ -83,29 +75,29 @@ impl Runtime {
 
 #[derive(Clone)]
 pub struct ContextPtrOwned {
-    pub(crate) context: *mut JSContext,
+    pub(crate) context: *mut sys::JSContext,
     runtime: Rc<RuntimePtr>,
 }
 
 #[derive(Clone)]
 pub(crate) enum ContextPtr {
     Owned(Rc<ContextPtrOwned>),
-    Borrowed(*mut JSContext),
+    Borrowed(*mut sys::JSContext),
 }
 
 impl Drop for ContextPtrOwned {
     fn drop(&mut self) {
         if !self.context.is_null() {
             unsafe {
-                JS_FreeContext(self.context);
+                sys::JS_FreeContext(self.context);
             }
-            self.context = ptr::null::<JSContext>() as *mut _;
+            self.context = ptr::null::<sys::JSContext>() as *mut _;
         }
     }
 }
 
 impl ContextPtr {
-    pub(crate) fn as_ptr(&self) -> *mut JSContext {
+    pub(crate) fn as_ptr(&self) -> *mut sys::JSContext {
         match self {
             &ContextPtr::Owned(ref ctx) => ctx.context,
             &ContextPtr::Borrowed(ptr) => ptr,
@@ -132,20 +124,20 @@ impl Context {
         let mut flags = 0i32;
 
         if strict {
-            flags |= JS_EVAL_FLAG_STRICT as i32;
+            flags |= sys::JS_EVAL_FLAG_STRICT as i32;
         }
 
         if strip {
-            flags |= JS_EVAL_FLAG_STRIP as i32;
+            flags |= sys::JS_EVAL_FLAG_STRIP as i32;
         }
 
         let val = unsafe {
-            let v = JS_Eval(
+            let v = sys::JS_Eval(
                 self.ptr.as_ptr(),
                 input.as_ptr(),
                 input.as_bytes().len(),
                 filename.as_ptr(),
-                flags | JS_EVAL_TYPE_MODULE as i32,
+                flags | sys::JS_EVAL_TYPE_MODULE as i32,
             );
 
             Value { value: v, context: self.ptr.clone() }
@@ -153,7 +145,7 @@ impl Context {
 
         if val.is_exception() {
             unsafe {
-                let ex = JS_GetException(self.ptr.as_ptr());
+                let ex = sys::JS_GetException(self.ptr.as_ptr());
                 Err(Value { value: ex, context: self.ptr.clone() })
             }
         } else {

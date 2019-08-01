@@ -1,7 +1,4 @@
-use quickjs_sys::{
-    JS_GetPropertyInternal, JS_GetPropertyUint32, JS_NewAtom,
-    JS_SetPropertyUint32,
-};
+use quickjs_sys as sys;
 
 use crate::value::Value;
 
@@ -12,11 +9,11 @@ pub struct Array {
 impl Array {
     pub fn len(&self) -> Result<usize, Value> {
         unsafe {
-            let len_atm = JS_NewAtom(
+            let len_atm = sys::JS_NewAtom(
                 self.value.context.as_ptr(),
                 b"length\0".as_ptr() as *const i8,
             );
-            let l = JS_GetPropertyInternal(
+            let l = sys::JS_GetPropertyInternal(
                 self.value.context.as_ptr(),
                 self.value.value,
                 len_atm,
@@ -39,7 +36,7 @@ impl Array {
 
     pub fn set(&mut self, index: u32, val: Value) -> bool {
         unsafe {
-            JS_SetPropertyUint32(
+            sys::JS_SetPropertyUint32(
                 self.value.context.as_ptr(),
                 self.value.value,
                 index,
@@ -49,7 +46,7 @@ impl Array {
     }
     pub fn get(&self, idx: u32) -> Result<Value, Value> {
         let v = unsafe {
-            JS_GetPropertyUint32(
+            sys::JS_GetPropertyUint32(
                 self.value.context.as_ptr(),
                 self.value.value,
                 idx,

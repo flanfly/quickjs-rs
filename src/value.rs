@@ -7,17 +7,7 @@ use std::rc::Rc;
 use std::slice;
 use std::str;
 
-use quickjs_sys::{
-    JSContext, JSRefCountHeader, JSRuntime, JSValue, JS_Eval, JS_FreeContext,
-    JS_FreeRuntime, JS_NewContext, JS_NewRuntime, JS_SetRuntimeInfo,
-    __JS_FreeValueRT, js_init_module_os, js_init_module_std,
-    js_std_add_helpers, js_std_dump_error, Helper_JS_DupValue,
-    Helper_JS_FreeValue, Helper_JS_NewBool, Helper_JS_NewFloat64,
-    JS_GetException, JS_NewArray, JS_NewInt64, JS_NewStringLen, JS_ToBool,
-    JS_ToCStringLen, JS_ToFloat64, JS_ToInt64, JS_EVAL_FLAG_SHEBANG,
-    JS_EVAL_FLAG_STRICT, JS_EVAL_FLAG_STRIP, JS_EVAL_TYPE_MODULE, JS_TAG_BOOL,
-    JS_TAG_EXCEPTION, JS_TAG_FIRST, JS_TAG_FLOAT64, JS_TAG_INT, JS_TAG_STRING,
-};
+use quickjs_sys as sys;
 
 use crate::array::Array;
 use crate::runtime::{Context, ContextPtr};
@@ -80,27 +70,27 @@ impl Clone for Value {
 impl Value {
     #[inline]
     pub fn is_exception(&self) -> bool {
-        self.value.tag as u64 == JS_TAG_EXCEPTION as u64
+        self.value.tag as u64 == sys::JS_TAG_EXCEPTION as u64
     }
 
     #[inline]
     pub fn is_string(&self) -> bool {
-        self.value.tag as i32 == JS_TAG_STRING
+        self.value.tag as i32 == sys::JS_TAG_STRING
     }
 
     #[inline]
     pub fn is_integer(&self) -> bool {
-        self.value.tag as i32 == JS_TAG_INT
+        self.value.tag as i32 == sys::JS_TAG_INT
     }
 
     #[inline]
     pub fn is_boolean(&self) -> bool {
-        self.value.tag as i32 == JS_TAG_BOOL
+        self.value.tag as i32 == sys::JS_TAG_BOOL
     }
 
     #[inline]
     pub fn is_float(&self) -> bool {
-        self.value.tag as i32 == JS_TAG_FLOAT64
+        self.value.tag as i32 == sys::JS_TAG_FLOAT64
     }
 
     #[inline]
@@ -120,7 +110,7 @@ impl Value {
         if self.is_integer() {
             let mut ret = 0i64;
             let rc = unsafe {
-                JS_ToInt64(self.context.context, &mut ret, self.value)
+                sys::JS_ToInt64(self.context.as_ptr(), &mut ret, self.value)
             };
 
             if rc == 0 {
@@ -137,7 +127,7 @@ impl Value {
         if self.is_number() {
             let mut ret = 0f64;
             let rc = unsafe {
-                JS_ToFloat64(self.context.context, &mut ret, self.value)
+                sys::JS_ToFloat64(self.context.as_ptr(), &mut ret, self.value)
             };
 
             if rc == 0 {
@@ -152,7 +142,8 @@ impl Value {
 
     pub fn as_boolean(&self) -> Option<bool> {
         if self.is_boolean() {
-            let rc = unsafe { JS_ToBool(self.context.context, self.value) };
+            let rc =
+                unsafe { sys::JS_ToBool(self.context.as_ptr(), self.value) };
 
             match rc {
                 0 => Some(false),
@@ -172,8 +163,8 @@ impl Context {
     pub fn string(&self, val: &str) -> Value {
         unsafe {
             Value {
-                value: JS_NewStringLen(
-                    self.ptr.context,
+                value: sys::JS_NewStringLen(
+                    self.ptr.as_ptr(),
                     val.as_ptr() as *const i8,
                     val.len() as i32,
                 ),
@@ -185,7 +176,7 @@ impl Context {
     pub fn integer(&self, val: i64) -> Value {
         unsafe {
             Value {
-                value: JS_NewInt64(self.ptr.context, val),
+                value: sys::JS_NewInt64(self.ptr.as_ptr(), val),
                 context: self.ptr.clone(),
             }
         }
@@ -194,7 +185,7 @@ impl Context {
     pub fn float(&self, val: f64) -> Value {
         unsafe {
             Value {
-                value: Helper_JS_NewFloat64(self.ptr.context, val),
+                value: sys::Helper_JS_NewFloat64(self.ptr.as_ptr(), val),
                 context: self.ptr.clone(),
             }
         }
@@ -203,8 +194,8 @@ impl Context {
     pub fn boolean(&self, val: bool) -> Value {
         unsafe {
             Value {
-                value: Helper_JS_NewBool(
-                    self.ptr.context,
+                value: sys::Helper_JS_NewBool(
+                    self.ptr.as_ptr(),
                     if val { 1 } else { 0 },
                 ),
                 context: self.ptr.clone(),
@@ -215,7 +206,7 @@ impl Context {
     pub fn array(&self, vals: &[Value]) -> Result<Array, Value> {
         let val = unsafe {
             Value {
-                value: JS_NewArray(self.ptr.context),
+                value: sys::JS_NewArray(self.ptr.as_ptr()),
                 context: self.ptr.clone(),
             }
         };
