@@ -1,15 +1,13 @@
 use std::f64;
-use std::ffi::{CStr, CString};
 use std::fmt;
 use std::i64;
-use std::ptr;
-use std::rc::Rc;
 use std::slice;
 use std::str;
 
 use quickjs_sys as sys;
 
 use crate::array::Array;
+use crate::object::Object;
 use crate::runtime::{Context, ContextPtr};
 
 pub struct Value {
@@ -68,34 +66,32 @@ impl Clone for Value {
 }
 
 impl Value {
-    #[inline]
     pub fn is_exception(&self) -> bool {
-        self.value.tag as u64 == sys::JS_TAG_EXCEPTION as u64
+        unsafe { sys::Helper_JS_IsException(self.value) != 0 }
     }
 
-    #[inline]
     pub fn is_string(&self) -> bool {
-        self.value.tag as i32 == sys::JS_TAG_STRING
+        unsafe { sys::Helper_JS_IsString(self.value) != 0 }
     }
 
-    #[inline]
     pub fn is_integer(&self) -> bool {
-        self.value.tag as i32 == sys::JS_TAG_INT
+        unsafe { sys::Helper_JS_IsInteger(self.value) != 0 }
     }
 
-    #[inline]
     pub fn is_boolean(&self) -> bool {
-        self.value.tag as i32 == sys::JS_TAG_BOOL
+        unsafe { sys::Helper_JS_IsBool(self.value) != 0 }
     }
 
-    #[inline]
-    pub fn is_float(&self) -> bool {
-        self.value.tag as i32 == sys::JS_TAG_FLOAT64
-    }
-
-    #[inline]
     pub fn is_number(&self) -> bool {
-        self.is_float() || self.is_integer()
+        unsafe { sys::JS_IsNumber(self.value) != 0 }
+    }
+
+    pub fn is_undefined(&self) -> bool {
+        unsafe { sys::Helper_JS_IsUndefined(self.value) != 0 }
+    }
+
+    pub fn is_null(&self) -> bool {
+        unsafe { sys::Helper_JS_IsNull(self.value) != 0 }
     }
 
     pub fn as_string(&self) -> Option<String> {
@@ -157,10 +153,53 @@ impl Value {
             None
         }
     }
+
+    pub fn call(&self, this: Value, args: &[Value]) -> Value {
+        unsafe {
+            let c = self.context.as_ptr();
+            let mut v = args
+                .into_iter()
+                .map(|x| sys::Helper_JS_DupValue(c, x.value))
+                .collect::<Vec<sys::JSValue>>();
+            let t = sys::Helper_JS_DupValue(c, this.value);
+            let ret =
+                sys::JS_Call(c, self.value, t, v.len() as i32, v.as_mut_ptr());
+
+            Value { context: self.context.clone(), value: ret }
+        }
+    }
 }
 
 impl Context {
+    pub fn undefined(&self) -> Value {
+        unsafe {
+            Value {
+                value: sys::Helper_JS_NewUndefined(),
+                context: self.ptr.clone(),
+            }
+        }
+    }
+
+    pub fn null(&self) -> Value {
+        unsafe {
+            Value { value: sys::Helper_JS_NewNull(), context: self.ptr.clone() }
+        }
+    }
+
+    pub fn exception(&self) -> Value {
+        unsafe {
+            Value {
+                value: sys::Helper_JS_NewException(),
+                context: self.ptr.clone(),
+            }
+        }
+    }
+
     pub fn string(&self, val: &str) -> Value {
+        let mut cstr = val.as_bytes().to_vec();
+
+        cstr.push(0);
+
         unsafe {
             Value {
                 value: sys::JS_NewStringLen(
@@ -223,12 +262,105 @@ impl Context {
             Ok(ary)
         }
     }
+
+    pub fn object(&self) -> Result<Object, Value> {
+        let val = unsafe {
+            Value {
+                value: sys::JS_NewObject(self.ptr.as_ptr()),
+                context: self.ptr.clone(),
+            }
+        };
+
+        if val.is_exception() {
+            Err(val)
+        } else {
+            Ok(Object { value: val })
+        }
+    }
+
+    pub fn function(
+        &self,
+        nam: &str,
+        f: extern "C" fn(
+            *mut sys::JSContext,
+            sys::JSValue,
+            i32,
+            *mut sys::JSValue,
+        ) -> sys::JSValue,
+    ) -> Result<Value, Value> {
+        let val = unsafe {
+            Value {
+                value: sys::JS_NewCFunction2(
+                    self.ptr.as_ptr(),
+                    Some(f),
+                    nam.as_ptr() as *const i8,
+                    nam.len() as i32,
+                    sys::JSCFunctionEnum_JS_CFUNC_generic,
+                    0,
+                ),
+                context: self.ptr.clone(),
+            }
+        };
+
+        if val.is_exception() {
+            Err(val)
+        } else {
+            Ok(val)
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! wrap_fn {
+    ($name:ident, $target:ident) => {
+        extern "C" fn $name(
+            ctx: *mut sys::JSContext,
+            this: sys::JSValue,
+            argc: i32,
+            argv: *mut sys::JSValue,
+        ) -> sys::JSValue {
+            assert!(!ctx.is_null());
+
+            let ctx = $crate::Context {
+                ptr: $crate::runtime::ContextPtr::Borrowed(ctx),
+            };
+            let mut args = Vec::<$crate::Value>::with_capacity(argc as usize);
+            let this = $crate::Value { value: this, context: ctx.ptr.clone() };
+
+            for idx in 0..argc {
+                let arg = unsafe {
+                    $crate::Value {
+                        value: *argv.offset(idx as isize),
+                        context: ctx.ptr.clone(),
+                    }
+                };
+
+                args.push(arg);
+            }
+
+            $target(&ctx, this, &args).value
+        }
+    };
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Runtime;
+
+    #[test]
+    fn unit() {
+        let mut rt = Runtime::default();
+        let ctx = rt.context();
+
+        let undef = ctx.undefined();
+        let null = ctx.null();
+        let ex = ctx.exception();
+
+        assert!(undef.is_undefined());
+        assert!(null.is_null());
+        assert!(ex.is_exception());
+    }
 
     #[test]
     fn strings() {
@@ -303,13 +435,13 @@ mod tests {
         assert!(f3.is_number());
         assert_eq!(f3.as_float().unwrap(), -1.0);
 
-        assert!(f4.is_float());
+        assert!(f4.is_number());
         assert_eq!(f4.as_float().unwrap(), f64::INFINITY);
 
-        assert!(f5.is_float());
+        assert!(f5.is_number());
         assert_eq!(f5.as_float().unwrap(), f64::NEG_INFINITY);
 
-        assert!(f6.is_float());
+        assert!(f6.is_number());
         assert!(f6.as_float().unwrap().is_nan());
     }
 
@@ -334,7 +466,7 @@ mod tests {
         let mut rt = Runtime::default();
         let ctx = rt.context();
 
-        let ary1 = ctx.array(&[]).unwrap();
+        let _ = ctx.array(&[]).unwrap();
 
         let a =
             (0..100).into_iter().map(|x| ctx.integer(x)).collect::<Vec<_>>();
@@ -347,5 +479,57 @@ mod tests {
                 i as i64
             );
         }
+    }
+
+    fn test_func1(ctx: &Context, _: Value, _: &[Value]) -> Value {
+        ctx.integer(0)
+    }
+
+    wrap_fn!(js_test_func1, test_func1);
+
+    #[test]
+    fn func() {
+        let mut rt = Runtime::default();
+        let ctx = rt.context();
+        let this = ctx.integer(3);
+        let exp = ctx.integer(0);
+        let f = ctx.function("testFunc", js_test_func1).unwrap();
+
+        assert_eq!(f.call(this, &[]), exp);
+    }
+
+    fn test_func2(ctx: &Context, _: Value, args: &[Value]) -> Value {
+        ctx.integer(
+            args[0].as_integer().unwrap() + args[1].as_integer().unwrap(),
+        )
+    }
+
+    wrap_fn!(js_test_func2, test_func2);
+
+    #[test]
+    fn func2() {
+        let mut rt = Runtime::default();
+        let ctx = rt.context();
+        let this = ctx.integer(3);
+        let i = ctx.integer(23);
+        let j = ctx.integer(42);
+        let exp = ctx.integer(23 + 42);
+        let f = ctx.function("testFunc", js_test_func2).unwrap();
+
+        assert_eq!(f.call(this, &[i, j]), exp);
+    }
+
+    #[test]
+    fn object() {
+        let mut rt = Runtime::default();
+        let ctx = rt.context();
+
+        let mut obj = ctx.object().unwrap();
+
+        assert!(obj.set("a", ctx.integer(1)));
+        assert!(obj.set("b", ctx.integer(2)));
+        assert!(obj.set("c", ctx.string("Test")));
+
+        assert_eq!(obj.get("a").unwrap(), ctx.integer(1));
     }
 }

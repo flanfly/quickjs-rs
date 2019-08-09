@@ -1,10 +1,6 @@
-use std::ffi::{CStr, CString};
-use std::fmt;
-use std::i64;
-use std::f64;
+use std::ffi::CString;
 use std::ptr;
 use std::rc::Rc;
-use std::slice;
 use std::str;
 
 use quickjs_sys as sys;
@@ -12,7 +8,6 @@ use quickjs_sys as sys;
 use crate::Value;
 
 struct RuntimePtr {
-    info: CString,
     runtime: *mut sys::JSRuntime,
 }
 
@@ -37,12 +32,7 @@ impl Default for Runtime {
             let rt = sys::JS_NewRuntime();
 
             assert!(!rt.is_null());
-            Runtime {
-                ptr: Rc::new(RuntimePtr {
-                    runtime: rt,
-                    info: CString::default(),
-                }),
-            }
+            Runtime { ptr: Rc::new(RuntimePtr { runtime: rt }) }
         }
     }
 }
@@ -152,11 +142,6 @@ impl Context {
             Ok(val)
         }
     }
-
-    /*
-    JS_DefinePropertyValueUint32(ctx, obj, 0, JS_NewInt32(ctx, info.dwSize.X), JS_PROP_C_W_E);
-    JS_DefinePropertyValueUint32(ctx, obj, 1, JS_NewInt32(ctx, info.dwSize.Y), JS_PROP_C_W_E);
-    */
 }
 
 #[cfg(test)]
@@ -169,19 +154,19 @@ mod tests {
             let mut rt = Runtime::default();
             rt.context()
         };
-        let val = ctx
+        let _ = ctx
             .eval(r#"print('Hello, World\n');"#, "<test>", false, false)
             .unwrap();
     }
 
-    //#[test]
-    //fn eval_multiple_ctx() {
-    //    let mut rt = Runtime::default();
-    //    let ctx1 = rt.context();
-    //    let mut ctx2 = rt.context();
+    #[test]
+    fn eval_multiple_ctx() {
+        let mut rt = Runtime::default();
+        let _ = rt.context();
+        let mut ctx2 = rt.context();
 
-    //    let val = ctx2
-    //        .eval(r#"print('Hello, World\n');"#, "<test>", false, false, false)
-    //        .unwrap();
-    //}
+        let _ = ctx2
+            .eval(r#"print('Hello, World\n');"#, "<test>", false, false)
+            .unwrap();
+    }
 }

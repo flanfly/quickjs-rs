@@ -40,10 +40,11 @@ impl Array {
                 self.value.context.as_ptr(),
                 self.value.value,
                 index,
-                val.value,
-            ) == 0
+                sys::Helper_JS_DupValue(self.value.context.as_ptr(), val.value),
+            ) >= 0
         }
     }
+
     pub fn get(&self, idx: u32) -> Result<Value, Value> {
         let v = unsafe {
             sys::JS_GetPropertyUint32(
